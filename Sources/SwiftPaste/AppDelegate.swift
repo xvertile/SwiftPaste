@@ -59,11 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "doc.on.clipboard",
-                accessibilityDescription: "Swift Paste"
-            )
-            button.image?.isTemplate = true
+            button.image = Self.menuBarImage()
             button.toolTip = "Swift Paste — tap ⌥ twice"
             button.target = self
             button.action = #selector(statusItemClicked)
@@ -73,6 +69,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu = NSMenu()
         menu.delegate = self
         rebuildMenu(menu)
+    }
+
+    /// The ⌘V logo, drawn as a template so it follows the menu bar's light/dark tint.
+    /// Falls back to a system symbol if the resource is missing.
+    private static func menuBarImage() -> NSImage? {
+        let image: NSImage?
+        if let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
+           let logo = NSImage(contentsOf: url) {
+            logo.size = NSSize(width: 18, height: 18)
+            image = logo
+        } else {
+            image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Swift Paste")
+        }
+        image?.isTemplate = true
+        image?.accessibilityDescription = "Swift Paste"
+        return image
     }
 
     /// Left click opens the history, right click (or ⌃click) opens the menu.

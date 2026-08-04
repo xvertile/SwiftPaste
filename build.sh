@@ -36,13 +36,14 @@ mkdir -p "${BUNDLE}/Contents/MacOS" "${BUNDLE}/Contents/Resources"
 cp "$BIN_PATH" "${BUNDLE}/Contents/MacOS/${BIN_NAME}"
 cp Resources/Info.plist "${BUNDLE}/Contents/Info.plist"
 
-# Regenerate the icon from Tools/make-icon.swift when it's missing.
-if [ ! -f Resources/AppIcon.icns ]; then
-    echo "==> Rendering app icon"
+# Regenerate the artwork from Resources/logo.svg when it's missing.
+if [ ! -f Resources/AppIcon.icns ] || [ ! -f Resources/MenuBarIcon.png ]; then
+    echo "==> Rendering icon and menu bar glyph from logo.svg"
     swift Tools/make-icon.swift > /dev/null
     iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
 fi
 cp Resources/AppIcon.icns "${BUNDLE}/Contents/Resources/AppIcon.icns"
+cp Resources/MenuBarIcon.png "${BUNDLE}/Contents/Resources/MenuBarIcon.png"
 printf 'APPL????' > "${BUNDLE}/Contents/PkgInfo"
 
 # Ad-hoc signature with a stable identifier so macOS keeps the Accessibility grant

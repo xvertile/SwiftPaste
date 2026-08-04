@@ -77,4 +77,4 @@ git tag v1.0.0 && git push --tags
 | `HistoryView.swift` | The list |
 | `Settings.swift` · `SettingsView.swift` | Retention preferences |
 | `Paster.swift` | Pasteboard writes and synthetic ⌘V |
-| `Tools/make-icon.swift` | Draws the app icon |
+| `Tools/make-icon.swift` | Renders the icon and menu bar glyph from `Resources/logo.svg` |
