@@ -1,0 +1,37 @@
+name: Release
+
+# Tag a commit to ship a build:  git tag v1.0.0 && git push --tags
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build app bundle
+        run: ./build.sh
+
+      - name: Zip app
+        run: ditto -c -k --keepParent "build/Swift Paste.app" "SwiftPaste.zip"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SwiftPaste.zip
+          generate_release_notes: true
+          body: |
+            Download `SwiftPaste.zip`, unzip, and drag **Swift Paste.app** to Applications.
+
+            The build is ad-hoc signed, so on first launch right-click the app and choose
+            **Open**, then grant Accessibility in
+            System Settings › Privacy & Security › Accessibility.

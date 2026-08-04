@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Assemble app bundle
+        run: ./build.sh
+
+      - name: Check the bundle is well formed
+        run: |
+          test -x "build/Swift Paste.app/Contents/MacOS/SwiftPaste"
+          test -f "build/Swift Paste.app/Contents/Resources/AppIcon.icns"
+          codesign --verify --strict "build/Swift Paste.app"
+          echo "bundle OK"
