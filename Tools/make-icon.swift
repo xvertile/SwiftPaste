@@ -1,6 +1,5 @@
 #!/usr/bin/env swift
-// Renders the Swift Paste app icon and writes an .iconset next to Resources/.
-// Every shape is drawn from scratch, so nothing here is licensed artwork.
+// Renders the app icon and the menu bar glyph from Resources/logo.svg.
 //
 //   swift Tools/make-icon.swift
 //   iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
@@ -9,66 +8,52 @@ import AppKit
 import Foundation
 
 let canvas: CGFloat = 1024
+let logoURL = URL(fileURLWithPath: "Resources/logo.svg")
+
+guard let logo = NSImage(contentsOf: logoURL) else {
+    print("error: could not load \(logoURL.path)")
+    exit(1)
+}
 
 func rounded(_ rect: NSRect, _ radius: CGFloat) -> NSBezierPath {
     NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
 }
 
-/// One icon at full 1024 resolution; callers scale the whole context instead of
-/// re-laying anything out, so every size stays identical in proportion.
+/// Full icon at 1024; callers scale the context rather than re-laying anything out.
 func drawIcon() {
-    // Background: rounded square with the macOS icon-grid corner radius.
-    let plate = rounded(NSRect(x: 0, y: 0, width: canvas, height: canvas), canvas * 0.2246)
+    let bounds = NSRect(x: 0, y: 0, width: canvas, height: canvas)
+    let plate = rounded(bounds, canvas * 0.2246)   // the macOS icon-grid corner radius
+
+    // Near-white plate, so the black logo reads exactly as drawn.
     let gradient = NSGradient(colors: [
-        NSColor(srgbRed: 0.42, green: 0.36, blue: 0.98, alpha: 1),   // indigo
-        NSColor(srgbRed: 0.66, green: 0.33, blue: 0.93, alpha: 1)    // violet
+        NSColor(srgbRed: 1.00, green: 1.00, blue: 1.00, alpha: 1),
+        NSColor(srgbRed: 0.90, green: 0.90, blue: 0.92, alpha: 1)
     ])!
     gradient.draw(in: plate, angle: -90)
 
-    // Soft highlight across the top third.
-    NSGraphicsContext.saveGraphicsState()
-    plate.setClip()
-    let sheen = NSGradient(colors: [
-        NSColor(white: 1, alpha: 0.22),
-        NSColor(white: 1, alpha: 0.0)
-    ])!
-    sheen.draw(in: NSRect(x: 0, y: canvas * 0.55, width: canvas, height: canvas * 0.45), angle: -90)
-    NSGraphicsContext.restoreGraphicsState()
+    // A hairline keeps the icon from dissolving into white backgrounds.
+    NSColor(white: 0, alpha: 0.10).setStroke()
+    plate.lineWidth = canvas * 0.006
+    plate.stroke()
 
-    // Clipboard body.
-    let body = NSRect(x: 286, y: 168, width: 452, height: 600)
-    NSColor(white: 0.06, alpha: 0.16).setFill()
-    rounded(body.offsetBy(dx: 0, dy: -14), 74).fill()
-    NSColor.white.setFill()
-    rounded(body, 74).fill()
-
-    // The clip at the top, drawn over the body so they read as one piece.
-    let clipOuter = NSRect(x: 402, y: 706, width: 220, height: 132)
-    NSColor.white.setFill()
-    rounded(clipOuter, 46).fill()
-
-    let clipInner = NSRect(x: 452, y: 744, width: 120, height: 66)
-    NSColor(srgbRed: 0.47, green: 0.35, blue: 0.96, alpha: 1).setFill()
-    rounded(clipInner, 33).fill()
-
-    // Lightning bolt cut into the clipboard face — the "swift" half of the name.
-    let bolt = NSBezierPath()
-    bolt.move(to: NSPoint(x: 580, y: 656))
-    bolt.line(to: NSPoint(x: 372, y: 440))
-    bolt.line(to: NSPoint(x: 492, y: 440))
-    bolt.line(to: NSPoint(x: 444, y: 262))
-    bolt.line(to: NSPoint(x: 652, y: 478))
-    bolt.line(to: NSPoint(x: 532, y: 478))
-    bolt.close()
-
-    let boltGradient = NSGradient(colors: [
-        NSColor(srgbRed: 0.40, green: 0.33, blue: 0.98, alpha: 1),
-        NSColor(srgbRed: 0.71, green: 0.35, blue: 0.94, alpha: 1)
-    ])!
-    boltGradient.draw(in: bolt, angle: -90)
+    // Logo centred, leaving the usual macOS margin.
+    let inset = canvas * 0.17
+    logo.draw(in: bounds.insetBy(dx: inset, dy: inset),
+              from: .zero,
+              operation: .sourceOver,
+              fraction: 1.0)
 }
 
-func render(size: Int) -> Data {
+/// Just the glyph in black on transparency, for use as a menu bar template image.
+func drawGlyph(side: CGFloat) {
+    let bounds = NSRect(x: 0, y: 0, width: side, height: side)
+    logo.draw(in: bounds.insetBy(dx: side * 0.02, dy: side * 0.02),
+              from: .zero,
+              operation: .sourceOver,
+              fraction: 1.0)
+}
+
+func render(size: Int, _ body: (CGFloat) -> Void) -> Data {
     let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil,
         pixelsWide: size, pixelsHigh: size,
@@ -83,28 +68,34 @@ func render(size: Int) -> Data {
     let context = NSGraphicsContext(bitmapImageRep: rep)!
     NSGraphicsContext.current = context
     context.imageInterpolation = .high
-
-    let scale = CGFloat(size) / canvas
-    context.cgContext.scaleBy(x: scale, y: scale)
-    drawIcon()
-
+    body(CGFloat(size))
     context.flushGraphics()
     NSGraphicsContext.restoreGraphicsState()
 
     return rep.representation(using: .png, properties: [:])!
 }
 
-let outputDirectory = URL(fileURLWithPath: "build/AppIcon.iconset")
-try? FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+// MARK: - App icon
 
-// (point size, scale) pairs required by iconutil.
+let iconset = URL(fileURLWithPath: "build/AppIcon.iconset")
+try? FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
+
 let variants: [(Int, Int)] = [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1), (128, 2),
                               (256, 1), (256, 2), (512, 1), (512, 2)]
 
 for (points, scale) in variants {
     let pixels = points * scale
-    let suffix = scale == 1 ? "" : "@2x"
-    let name = "icon_\(points)x\(points)\(suffix).png"
-    try render(size: pixels).write(to: outputDirectory.appendingPathComponent(name))
+    let name = "icon_\(points)x\(points)\(scale == 1 ? "" : "@2x").png"
+    let data = render(size: pixels) { side in
+        NSGraphicsContext.current?.cgContext.scaleBy(x: side / canvas, y: side / canvas)
+        drawIcon()
+    }
+    try data.write(to: iconset.appendingPathComponent(name))
     print("wrote \(name) (\(pixels)px)")
 }
+
+// MARK: - Menu bar template
+
+let menuBar = URL(fileURLWithPath: "Resources/MenuBarIcon.png")
+try render(size: 36) { drawGlyph(side: $0) }.write(to: menuBar)
+print("wrote \(menuBar.lastPathComponent) (36px, 18pt @2x)")

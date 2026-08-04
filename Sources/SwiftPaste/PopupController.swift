@@ -232,10 +232,17 @@ final class PopupController: NSObject, NSWindowDelegate {
             previewClickMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.leftMouseDown, .rightMouseDown]
             ) { [weak self] event in
-                guard let self, self.preview.owns(event.window) else { return event }
+                guard let self else { return event }
+                Diagnostics.log("""
+                click: window=\(String(describing: event.window)) \
+                isPreview=\(self.preview.owns(event.window)) appActive=\(NSApp.isActive)
+                """)
+                guard self.preview.owns(event.window) else { return event }
                 self.previewHoldsFocus = true
                 NSApp.activate(ignoringOtherApps: true)
                 self.preview.makeKey()
+                self.preview.focusText()
+                Diagnostics.log("click: after focus -> previewKey=\(self.preview.isKey) appActive=\(NSApp.isActive)")
                 return event
             }
         }
@@ -262,6 +269,23 @@ final class PopupController: NSObject, NSWindowDelegate {
         }
         if command, Int(event.keyCode) == kVK_ANSI_Y {
             model.previewSelected()
+            return true
+        }
+
+        // ⌘C copies without pasting, and is always handled here so macOS never beeps at an
+        // unhandled key equivalent. A selection in the preview wins; otherwise the whole
+        // highlighted entry is copied.
+        if command, Int(event.keyCode) == kVK_ANSI_C {
+            monitor.acknowledgeOwnWrite()
+            if preview.copySelectionIfAny() {
+                monitor.acknowledgeOwnWrite()
+                return true
+            }
+            if let item = model.selectedItem {
+                Paster.writeToPasteboard(item, store: store)
+                Diagnostics.log("⌘C: no selection, copied whole entry (\(item.kind.rawValue))")
+            }
+            monitor.acknowledgeOwnWrite()
             return true
         }
 

@@ -44,6 +44,35 @@ final class PreviewController {
         panel?.makeKey()
     }
 
+    /// Hands the text view first-responder status explicitly. Clicking alone isn't enough:
+    /// the click is dispatched before the panel finishes becoming key, and a view can't
+    /// become first responder in a window that isn't key yet — hence the system beep on ⌘C.
+    func focusText() {
+        guard let panel, let content = panel.contentView,
+              let textView = Self.firstTextView(in: content) else { return }
+        panel.makeFirstResponder(textView)
+    }
+
+    /// Copies whatever is selected in the preview, bypassing the responder chain entirely —
+    /// `copy(_:)` on the text view works whether or not the panel is key. Returns false when
+    /// there is no selection to copy.
+    func copySelectionIfAny() -> Bool {
+        guard let panel, let content = panel.contentView,
+              let textView = Self.firstTextView(in: content),
+              textView.selectedRange().length > 0 else { return false }
+        textView.copy(nil)
+        Diagnostics.log("copySelectionIfAny: copied \(textView.selectedRange().length) chars")
+        return true
+    }
+
+    private static func firstTextView(in view: NSView) -> NSTextView? {
+        if let textView = view as? NSTextView { return textView }
+        for subview in view.subviews {
+            if let found = firstTextView(in: subview) { return found }
+        }
+        return nil
+    }
+
     func toggle(_ item: ClipboardItem, attachedTo parent: NSWindow) {
         if isVisible {
             close()
@@ -119,25 +148,74 @@ final class PreviewController {
     }
 }
 
+/// Text view for a panel that isn't the key window.
+///
+/// A view in a non-key window normally *swallows* the first click — the click only raises
+/// the window — so the text view never saw the press that starts a selection.
+/// `acceptsFirstMouse` opts out of that, and `mouseDown` claims focus before the press is
+/// handled so the selection anchor lands where the user clicked.
+final class PreviewTextView: NSTextView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        Diagnostics.log("""
+        textView.mouseDown: appActive=\(NSApp.isActive) windowKey=\(window?.isKeyWindow == true) \
+        isFirstResponder=\(window?.firstResponder === self)
+        """)
+
+        if window?.isKeyWindow != true {
+            NSApp.activate(ignoringOtherApps: true)
+            window?.makeKey()
+            let claimed = window?.makeFirstResponder(self) ?? false
+            Diagnostics.log("""
+            textView.mouseDown: claimed focus -> appActive=\(NSApp.isActive) \
+            windowKey=\(window?.isKeyWindow == true) madeFirstResponder=\(claimed)
+            """)
+        }
+
+        super.mouseDown(with: event)
+        Diagnostics.log("textView.mouseDown done: selection=\(selectedRange().length) chars")
+    }
+}
+
 /// A real NSTextView: mouse selection, ⌘C, ⌘A and the standard context menu all work,
 /// which SwiftUI's `Text(...).textSelection(.enabled)` does not reliably do inside a panel.
 struct SelectableTextView: NSViewRepresentable {
     let text: String
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
-        scroll.drawsBackground = false
+        let scroll = NSScrollView()
+        scroll.borderType = .noBorder
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
 
-        guard let textView = scroll.documentView as? NSTextView else { return scroll }
+        let unbounded = NSSize(width: CGFloat(0), height: CGFloat.greatestFiniteMagnitude)
+        let container = NSTextContainer(size: unbounded)
+        container.widthTracksTextView = true
+
+        let layoutManager = NSLayoutManager()
+        layoutManager.addTextContainer(container)
+
+        let storage = NSTextStorage()
+        storage.addLayoutManager(layoutManager)
+
+        let textView = PreviewTextView(frame: .zero, textContainer: container)
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = false
         textView.drawsBackground = false
+        textView.autoresizingMask = [.width]
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                  height: CGFloat.greatestFiniteMagnitude)
         textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         textView.textContainerInset = NSSize(width: 8, height: 10)
         textView.string = text
+
+        scroll.documentView = textView
         return scroll
     }
 
