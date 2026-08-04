@@ -129,7 +129,7 @@ final class PopupController: NSObject, NSWindowDelegate {
         guard isVisible else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isVisible else { return }
-            guard !self.preview.isKey else { return }        // user clicked into the preview
+            guard !self.previewHoldsFocus, !self.preview.isKey else { return }
             guard NSApp.keyWindow !== self.panel else { return }
             self.panel?.makeKey()
         }
@@ -138,6 +138,7 @@ final class PopupController: NSObject, NSWindowDelegate {
     private func togglePreview(_ item: ClipboardItem) {
         guard let panel else { return }
         preview.toggle(item, attachedTo: panel)
+        previewHoldsFocus = false
         // Keyboard control belongs to the list, so Esc and the arrows keep working.
         panel.makeKey()
     }
@@ -268,6 +269,7 @@ final class PopupController: NSObject, NSWindowDelegate {
         case kVK_Escape:
             if preview.isVisible {
                 preview.close()
+                previewHoldsFocus = false
                 panel?.makeKey()   // the preview may have held focus for text selection
                 return true
             }

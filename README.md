@@ -30,6 +30,7 @@ this to see the ⌥⌥ shortcut and to paste for you. Nothing else is required.
 | Close | esc |
 
 Drag any entry straight into another app — text drops as text, images and files drop as files.
+In a preview you can select text with the mouse and ⌘C it, or hit the **Copy** button.
 Right-click the menu bar icon for settings.
 
 ## Settings
