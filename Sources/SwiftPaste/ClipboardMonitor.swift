@@ -92,6 +92,7 @@ final class ClipboardMonitor {
     }
 
     private func imageItem(from pb: NSPasteboard, appName: String?, bundleID: String?) -> ClipboardItem? {
+        guard store.settings.captureImages else { return nil }
         let imageTypes: [NSPasteboard.PasteboardType] = [.png, .tiff]
         guard let type = imageTypes.first(where: { pb.data(forType: $0) != nil }),
               let raw = pb.data(forType: type),

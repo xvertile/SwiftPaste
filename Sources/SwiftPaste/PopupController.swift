@@ -24,7 +24,10 @@ final class PopupController: NSObject, NSWindowDelegate {
     private weak var previousApp: NSRunningApplication?
     private lazy var preview = PreviewController(store: store)
 
-    private let panelSize = NSSize(width: 400, height: 480)
+    private let panelSize = NSSize(width: Style.panelWidth, height: Style.panelHeight)
+
+    /// Set by the app delegate so the gear in the popup can open the settings window.
+    var onOpenSettings: (() -> Void)?
 
     init(store: ClipboardStore, monitor: ClipboardMonitor) {
         self.store = store
@@ -36,6 +39,10 @@ final class PopupController: NSObject, NSWindowDelegate {
         model.onPreview = { [weak self] item in self?.togglePreview(item) }
         model.onSelectionChanged = { [weak self] item in
             self?.preview.update(item)
+        }
+        model.onOpenSettings = { [weak self] in
+            self?.hide()
+            self?.onOpenSettings?()
         }
     }
 
@@ -98,7 +105,7 @@ final class PopupController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.delegate = self
 
-        let host = NSHostingView(rootView: HistoryView(model: model, store: store))
+        let host = NSHostingView(rootView: HistoryView(model: model, store: store, settings: store.settings))
         host.frame = NSRect(origin: .zero, size: panelSize)
         panel.contentView = host
         return panel
@@ -146,8 +153,15 @@ final class PopupController: NSObject, NSWindowDelegate {
     // MARK: - Paste
 
     private func paste(_ item: ClipboardItem) {
+        paste(item, plainText: nil)
+    }
+
+    /// - Parameter plainText: overrides the plain-text preference for this paste only.
+    private func paste(_ item: ClipboardItem, plainText: Bool?) {
+        let settings = store.settings
         monitor.acknowledgeOwnWrite()
-        Paster.writeToPasteboard(item, store: store)
+        Paster.writeToPasteboard(item, store: store,
+                                 plainTextOnly: plainText ?? settings.pastePlainText)
         monitor.acknowledgeOwnWrite()
 
         let target = previousApp
@@ -155,6 +169,8 @@ final class PopupController: NSObject, NSWindowDelegate {
         // Reorder only once the list is off screen, otherwise the row jumps under the
         // pointer while it is still being looked at.
         store.touch(item)
+
+        guard settings.pasteBehaviour == .pasteIntoApp else { return }
 
         guard AXIsProcessTrusted() else {
             warnAboutMissingPermissionOnce()
@@ -289,6 +305,23 @@ final class PopupController: NSObject, NSWindowDelegate {
             return true
         }
 
+        // ← / → and Tab move through the type filter. Holding ⌥ or ⌘ passes the key on so
+        // the usual word- and line-wise caret motion still works in the search field.
+        let plainArrows = !command && !event.modifierFlags.contains(.option)
+        switch Int(event.keyCode) {
+        case kVK_Tab:
+            model.cycleFilter(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+            return true
+        case kVK_LeftArrow where plainArrows:
+            model.cycleFilter(by: -1)
+            return true
+        case kVK_RightArrow where plainArrows:
+            model.cycleFilter(by: 1)
+            return true
+        default:
+            break
+        }
+
         switch Int(event.keyCode) {
         case kVK_Escape:
             if preview.isVisible {
@@ -300,7 +333,11 @@ final class PopupController: NSObject, NSWindowDelegate {
             hide()
             return true
         case kVK_Return, kVK_ANSI_KeypadEnter:
-            model.pasteSelected()
+            guard let item = model.selectedItem else { return true }
+            paste(item, plainText: event.modifierFlags.contains(.option) ? true : nil)
+            return true
+        case kVK_ANSI_Comma where command:
+            model.onOpenSettings?()
             return true
         case kVK_DownArrow:
             model.moveSelection(by: 1)

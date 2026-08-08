@@ -2,9 +2,35 @@ import AppKit
 import Combine
 import Foundation
 
+/// The type filter above the list.
+enum HistoryFilter: String, CaseIterable, Identifiable {
+    case all, text, images, files
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .text: return "Text"
+        case .images: return "Images"
+        case .files: return "Files"
+        }
+    }
+
+    func matches(_ item: ClipboardItem) -> Bool {
+        switch self {
+        case .all: return true
+        case .text: return item.kind == .text
+        case .images: return item.kind == .image
+        case .files: return item.kind == .files
+        }
+    }
+}
+
 @MainActor
 final class HistoryViewModel: ObservableObject {
     @Published var query: String = ""
+    @Published var filter: HistoryFilter = .all
     @Published var selectedID: UUID? {
         didSet {
             guard selectedID != oldValue, let item = selectedItem else { return }
@@ -21,6 +47,7 @@ final class HistoryViewModel: ObservableObject {
     var onPaste: ((ClipboardItem) -> Void)?
     var onClose: (() -> Void)?
     var onPreview: ((ClipboardItem) -> Void)?
+    var onOpenSettings: (() -> Void)?
     /// Called when the highlight moves, so an open Quick Look panel can follow along.
     var onSelectionChanged: ((ClipboardItem) -> Void)?
 
@@ -35,16 +62,34 @@ final class HistoryViewModel: ObservableObject {
 
     var filtered: [ClipboardItem] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return store.items }
-        return store.items.filter {
-            $0.searchHaystack.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        return store.items.filter { item in
+            guard filter.matches(item) else { return false }
+            guard !needle.isEmpty else { return true }
+            return item.searchHaystack.range(
+                of: needle, options: [.caseInsensitive, .diacriticInsensitive]
+            ) != nil
         }
+    }
+
+    /// True while the list is showing everything, which is when grouping pinned entries
+    /// under their own heading makes sense.
+    var isUnfiltered: Bool {
+        filter == .all && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func prepareForDisplay() {
         query = ""
+        filter = .all
         selectedID = filtered.first?.id
         presentationToken = UUID()
+    }
+
+    func cycleFilter(by offset: Int) {
+        let all = HistoryFilter.allCases
+        let current = all.firstIndex(of: filter) ?? 0
+        let next = (current + offset + all.count) % all.count
+        filter = all[next]
+        ensureSelectionValid()
     }
 
     func ensureSelectionValid() {

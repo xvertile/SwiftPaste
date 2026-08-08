@@ -24,21 +24,61 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
+      # The tag is the single source of truth for the version, so a release can
+      # never ship a bundle whose About pane disagrees with its own download page.
+      - name: Set version from tag
+        id: version
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Resources/Info.plist
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building $VERSION from $TAG"
+
       - name: Build app bundle
         run: ./build.sh
 
-      - name: Zip app
-        run: ditto -c -k --keepParent "build/Swift Paste.app" "SwiftPaste.zip"
+      - name: Verify the bundle
+        run: |
+          test -x "build/Swift Paste.app/Contents/MacOS/SwiftPaste"
+          test -f "build/Swift Paste.app/Contents/Resources/AppIcon.icns"
+          codesign --verify --strict "build/Swift Paste.app"
+          PLIST="build/Swift Paste.app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" \
+             = "${{ steps.version.outputs.version }}"
+          echo "bundle OK"
+
+      - name: Package
+        run: |
+          ditto -c -k --keepParent "build/Swift Paste.app" "SwiftPaste.zip"
+          Tools/make-dmg.sh SwiftPaste.dmg
+          shasum -a 256 SwiftPaste.zip SwiftPaste.dmg | tee checksums.txt
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          files: SwiftPaste.zip
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Swift Paste ${{ steps.version.outputs.version }}
+          files: |
+            SwiftPaste.dmg
+            SwiftPaste.zip
+            checksums.txt
           generate_release_notes: true
           body: |
-            Download `SwiftPaste.zip`, unzip, and drag **Swift Paste.app** to Applications.
+            ## Install
 
-            The build is ad-hoc signed, so on first launch right-click the app and choose
-            **Open**, then grant Accessibility in
-            System Settings › Privacy & Security › Accessibility.
+            Download **SwiftPaste.dmg**, open it, and drag Swift Paste to Applications.
+
+            On first launch, grant Accessibility in System Settings › Privacy & Security ›
+            Accessibility. Swift Paste needs it to see the double ⌥ tap and to paste for you.
+
+            ## Requirements
+
+            macOS 13 or later, Apple silicon or Intel.
+
+            ## Verifying this build
+
+            This build was produced by GitHub Actions from the tagged source — the run that
+            made it is linked under this release. `checksums.txt` has the SHA-256 of both files.

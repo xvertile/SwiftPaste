@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import ServiceManagement
 
 @MainActor
@@ -7,7 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var store = ClipboardStore(settings: settings)
     private var monitor: ClipboardMonitor!
     private var popup: PopupController!
-    private var hotKey: DoubleTapHotKey!
+    private var hotKey: DoubleTapHotKey?
+    private let quickPasteKey = GlobalHotKey()
     private var settingsWindow: SettingsWindowController!
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -20,12 +22,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         monitor = ClipboardMonitor(store: store)
         popup = PopupController(store: store, monitor: monitor)
-        hotKey = DoubleTapHotKey(flag: .option) { [weak self] in self?.popup.toggle() }
         settingsWindow = SettingsWindowController(settings: settings, store: store)
+        popup.onOpenSettings = { [weak self] in self?.settingsWindow.show() }
+        settings.onHotKeyChange = { [weak self] in self?.rearmHotKey() }
 
         setupStatusItem()
         monitor.start()
-        hotKey.start()
+        rearmHotKey()
         startRetentionSweep()
         NSLog("[SwiftPaste] launched — accessibility trusted: %@, %d items",
               AXIsProcessTrusted() ? "yes" : "no", store.items.count)
@@ -37,9 +40,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Rebuilds the shortcuts whenever the chosen modifier or quick-paste toggle changes.
+    private func rearmHotKey() {
+        hotKey?.stop()
+        hotKey = nil
+        if let flag = settings.hotKeyModifier.flag {
+            let key = DoubleTapHotKey(flag: flag) { [weak self] in self?.popup.toggle() }
+            key.start()
+            hotKey = key
+        }
+
+        quickPasteKey.unregister()
+        if settings.quickPastePrevious {
+            let registered = quickPasteKey.register(
+                keyCode: UInt32(kVK_ANSI_V),
+                modifiers: UInt32(cmdKey | optionKey)
+            ) { [weak self] in
+                self?.pastePreviousEntry()
+            }
+            if !registered {
+                NSLog("[SwiftPaste] could not register ⌥⌘V — another app already owns it")
+            }
+        }
+    }
+
+    /// ⌥⌘V: sends the entry *before* the current clipboard contents straight into the
+    /// frontmost app. Because the entry then moves to the top, pressing it again swaps back —
+    /// which makes alternating between two things a single chord.
+    private func pastePreviousEntry() {
+        guard popup.isVisible == false else { return }
+        let candidates = store.items
+        guard candidates.count > 1 else { return }
+        let previous = candidates[1]
+
+        monitor.acknowledgeOwnWrite()
+        Paster.writeToPasteboard(previous, store: store, plainTextOnly: settings.pastePlainText)
+        monitor.acknowledgeOwnWrite()
+        store.touch(previous)
+        Diagnostics.log("quick paste: put \(previous.kind.rawValue) entry on the clipboard")
+
+        // Honour the same preference the popup does.
+        guard settings.pasteBehaviour == .pasteIntoApp, AXIsProcessTrusted() else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            Paster.sendCommandV()
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         store.saveNow()
-        hotKey.stop()
+        hotKey?.stop()
+        quickPasteKey.unregister()
         monitor.stop()
         permissionTimer?.invalidate()
         retentionTimer?.invalidate()
@@ -60,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.image = Self.menuBarImage()
-            button.toolTip = "Swift Paste — tap ⌥ twice"
+            button.toolTip = "Swift Paste — \(settings.shortcutDescription)"
             button.target = self
             button.action = #selector(statusItemClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -112,7 +162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         open.target = self
         menu.addItem(open)
 
-        let hint = NSMenuItem(title: "Tap ⌥ Option twice, or click the icon", action: nil, keyEquivalent: "")
+        let hintText = settings.hotKeyModifier == .disabled
+            ? "Click the icon to open"
+            : "Tap \(settings.hotKeyModifier.label) twice, or click the icon"
+        let hint = NSMenuItem(title: hintText, action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
 
@@ -143,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let clear = NSMenuItem(title: "Clear History", action: #selector(clearHistory), keyEquivalent: "")
+        let clear = NSMenuItem(title: "Clear History…", action: #selector(clearHistory), keyEquivalent: "")
         clear.target = self
         menu.addItem(clear)
 
@@ -227,8 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard AXIsProcessTrusted() else { return }
                 timer.invalidate()
                 self?.permissionTimer = nil
-                self?.hotKey.stop()
-                self?.hotKey.start()
+                self?.rearmHotKey()
             }
         }
         RunLoop.main.add(timer, forMode: .common)

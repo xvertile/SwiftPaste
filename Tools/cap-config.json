@@ -1,0 +1,74 @@
+{
+  "aspectRatio": null,
+  "background": {
+    "source": {
+      "type": "color",
+      "value": [246, 246, 248],
+      "alpha": 255
+    },
+    "blur": 0.0,
+    "padding": 6.0,
+    "rounding": 14.0,
+    "roundingType": "squircle",
+    "inset": 0,
+    "crop": null,
+    "shadow": 52.0,
+    "advancedShadow": {
+      "size": 16.0,
+      "opacity": 34.0,
+      "blur": 7.0
+    },
+    "border": null
+  },
+  "camera": {
+    "hide": true,
+    "mirror": false,
+    "position": { "x": "right", "y": "bottom" },
+    "size": 30.0,
+    "zoomSize": 60.0,
+    "rounding": 100.0,
+    "shadow": 62.5,
+    "advancedShadow": { "size": 33.9, "opacity": 44.2, "blur": 10.5 },
+    "shape": "square",
+    "roundingType": "squircle",
+    "scaleDuringZoom": 0.7,
+    "backgroundBlur": { "mode": "off" }
+  },
+  "audio": {
+    "mute": true,
+    "improve": false,
+    "micVolumeDb": 0.0,
+    "micStereoMode": "stereo",
+    "systemVolumeDb": 0.0
+  },
+  "cursor": {
+    "hide": false,
+    "hideWhenIdle": true,
+    "hideWhenIdleDelay": 2.0,
+    "size": 100,
+    "type": "auto",
+    "animationStyle": "mellow",
+    "tension": 470.0,
+    "mass": 3.0,
+    "friction": 70.0,
+    "raw": false,
+    "motionBlur": 0.5,
+    "useSvg": true,
+    "rotationAmount": 0.15,
+    "baseRotation": 0.0,
+    "clickSpring": null,
+    "stopMovementInLastSeconds": null
+  },
+  "hotkeys": { "show": true },
+  "timeline": null,
+  "captions": null,
+  "keyboard": null,
+  "clips": [],
+  "annotations": [],
+  "screenMotionBlur": 0.4,
+  "screenMovementSpring": {
+    "stiffness": 200.0,
+    "damping": 40.0,
+    "mass": 2.25
+  }
+}
